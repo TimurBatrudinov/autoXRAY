@@ -10,7 +10,7 @@ echo -e "y" | bash <(curl -fsSL https://gitlab.com/fscarmen/warp/-/raw/main/menu
 
 **Установите WARP-cf**
 ```
-bash -c "$(curl -L https://github.com/xVRVx/autoXRAY/raw/refs/heads/main/test/warp-cf.sh)"
+bash -c "$(curl -L https://github.com/TimurBatrudinov/autoXRAY/raw/refs/heads/main/test/warp-cf.sh)"
 ```
 
 

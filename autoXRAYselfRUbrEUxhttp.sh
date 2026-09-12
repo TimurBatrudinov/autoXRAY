@@ -373,7 +373,7 @@ WEB_PATH="/var/www/$DOMAIN"
 mkdir -p "$WEB_PATH"
 
 # Генерируем сайт маскировку
-bash -c "$(curl -sL https://github.com/xVRVx/autoXRAY/raw/refs/heads/main/test/gen_page3.sh)" -- "$WEB_PATH"
+bash -c "$(curl -sL https://github.com/TimurBatrudinov/autoXRAY/raw/refs/heads/main/test/gen_page3.sh)" -- "$WEB_PATH"
 
 # Установка Xray
 bash -c "$(curl -sL https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --version v26.7.28
@@ -1159,7 +1159,7 @@ cat >> "$WEB_PATH/$path_subpage.html" <<EOF
 </div>
 </div>
 
-<div class="foot"><a href="https://github.com/xVRVx/autoXRAY" target="_blank" rel="noopener">autoXRAY on GitHub</a></div>
+<div class="foot"><a href="https://github.com/TimurBatrudinov/autoXRAY" target="_blank" rel="noopener">autoXRAY on GitHub</a></div>
 
 <div id="qrModal" class="modal"><div class="modal-card"><div id="qrcode"></div><button class="btn btn-ghost btn-sm" onclick="closeModal()">Закрыть</button></div></div>
 </body></html>
