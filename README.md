@@ -10,7 +10,7 @@
 ## Установка
 
 ```bash
-bash <(curl -sL https://github.com/xVRVx/autoXRAY/raw/refs/heads/main/autoXRAY1.sh) ваш.домен.com
+bash -c "$(curl -L https://raw.githubusercontent.com/xVRVx/autoXRAY/main/autoXRAY1.sh)" -- ваш.домен.com
 ```
 
 Скрипт автоматически определяет страну VPS — конфиги называются по схеме **«флаг страны + протокол»** (например, `🇩🇪 VLESS`, `🇩🇪 HYSTERIA2`); тип транспорта (xhttp, gRPC и т.д.) виден в клиенте.
@@ -41,7 +41,7 @@ bash <(curl -sL https://github.com/xVRVx/autoXRAY/raw/refs/heads/main/autoXRAY1.
 2. Установите мост на RU-VPS, передав ссылку аргументом:
 
 ```bash
-bash <(curl -sL https://github.com/xVRVx/autoXRAY/raw/refs/heads/main/autoXRAYselfRUbrEUxhttp.sh) поддомен.ваш.домен.com "vless://ссылка-из-консоли-EU"
+bash -c "$(curl -L https://raw.githubusercontent.com/xVRVx/autoXRAY/main/autoXRAYselfRUbrEUxhttp.sh)" -- поддомен.ваш.домен.com "vless://ссылка-из-консоли-EU"
 ```
 
 Можно передать несколько ссылок через пробел. Для каждой EU-ноды мост создаёт два конфига через себя (флаг страны RU-VPS) и один прямой (флаг страны ноды), балансировка — leastLoad.
