@@ -1,240 +1,60 @@
-# autoXRAY - личный ВПН сервер
-Bash-скрипт для автоматической настройки ядра [Xray](https://github.com/XTLS/Xray-core). Предназначен для удобного получения актуальных конфигураций VPN для семейного/личного использования, настраивает selfsteal VLESS [XHTTP](https://github.com/XTLS/Xray-core/discussions/4113#discussioncomment-11468947) / [RAW](https://github.com/XTLS/REALITY/blob/main/README.en.md) REALITY.
+# autoXRAY
 
-**UPD5: Добавлены MTProto FakeTLS, Hysteria2, можно выбирать ставить ли MTP/WARP** 
+Автоматическая установка XRay на VPS: скрипт разворачивает ядро XRay, генерирует ключи во всех протоколах, настраивает сайт-заглушку (маскировку), HTTPS-сертификат Let's Encrypt и создаёт страницу с конфигурациями для пользователей.
 
-**UPD4: Основной скрипт автоматически ставит WARP-cli.** 
+## Требования
 
-**UPD3: Основной и Экспериментальный скрипты объединены, ss2022 удален.** 
+- VPS на Ubuntu/Debian, доступ по root
+- **Домен** с одной A-записью, указывающей на IP вашего VPS (подойдёт любой DNS-сервис, включая бесплатные). Дождитесь распространения DNS перед установкой.
 
-**UPD2: Описание неактуальных скриптов перемещено в [oldScriptReadme.md](https://github.com/xVRVx/autoXRAY/blob/main/old/oldScriptReadme.md).**
+## Установка
 
-**UPD1: Добавлен новый раздел — [построение моста RU -> EU](#%D0%BD%D0%B0%D1%81%D1%82%D1%80%D0%B0%D0%B8%D0%B2%D0%B0%D0%B5%D0%BC-%D0%BC%D0%BE%D1%81%D1%82-ru---eu).**
-
-Тестируется на: чистом Debian 12 с root правами.
-
-===========================================================================
-
-## Конфигурация с клиентским конфигом для РФ (рекомендуется)
-Будем использовать маскировку под собственный сайт (selfsteal), который крутится на вашем же VPS. 
-
-Для установки надо [арендовать VPS](#выбор-сервера-подбирал-промо-тарифы) и [получить домен](#получаем-домен).
-
-Автоматически перенаправляет весь ру трафик напрямую.
 ```bash
-
-bash -c "$(curl -L https://raw.githubusercontent.com/xVRVx/autoXRAY/main/autoXRAY1.sh)" -- вашДОМЕН.com
+bash <(curl -sL https://github.com/xVRVx/autoXRAY/raw/refs/heads/main/autoXRAY1.sh) ваш.домен.com
 ```
 
-**Вы получите:**
-1) vless XHTTP reality EXTRA на 443 порту - продвинутые настройки, повышенная нагрузка на cpu.
-2) vless RAW reality VISION на 443 порту - хорошая маскировка, быстрый.
-3) Hysteria2 на 8080 порту
-4) vless RAW tls VISION - 8443 порт
-5) vless XHTTP tls EXTRA - 8443 порт
-6) vless WS tls - 8443 порт
-7) vless GRPC tls - 8443 порт
-8) MTProto proxy FakeTLS на 443 порту.
+Скрипт автоматически определяет страну VPS — конфиги называются по схеме **«флаг страны + протокол»** (например, `🇩🇪 VLESS`, `🇩🇪 HYSTERIA2`); тип транспорта (xhttp, gRPC и т.д.) виден в клиенте.
 
+## Настраиваемые протоколы
 
-===========================================================================
+| Протокол | Транспорт | Примечание |
+|---|---|---|
+| VLESS + REALITY | raw, flow Vision | основной, порт 443 |
+| VLESS + REALITY | xhttp | ссылка печатается только в консоли — нужна для моста RU→EU |
+| VLESS + TLS | raw / xhttp / WS / gRPC | порт 8443 |
+| Hysteria2 | QUIC | порт 8080 |
+| socks5 (mixed) | — | порт 10443, авторизация |
 
-## Выбор сервера (подбирал строго без [KYC](## "Know Your Customer — обязательная верификация личности (паспорт | телефон | карта)"))
+## Что получает пользователь
 
-**EU VPS (самые стабильные DE)**
-- [XorekCloud](https://xorek.cloud/?from=28522) - полноценный тариф за 249 руб./мес. (промо за 149). | DE/NL
-- [netgrid](https://netgrid.host/ru?from=5893) - промо от 2€. | DE/NL/CZ/PL/USA и др.
-- [intezio](https://intezio.net/?ref=3d2bf6736da6) - промо от 179 руб. | DE/NL
-- [notbad](https://my.notbad.cloud/?from=188) - от 4$, есть оплата рублями, хороший курс и канал. | DE/NL
-- [senko.digital](https://senko.digital/?ref=47670) - от 2€, есть днс-хостинг и домены для selfsteel, есть оплата СБП. | DE/NL/FI
-- [serv.host](https://serv.host/?from=44424) - от 360 руб./мес. | RU/DE/NL/FI и др.
+- **Страница конфигураций** `https://ваш.домен.com/<случайный-путь>.html` — ссылки, QR-коды, кнопки копирования;
+- **JSON-подписка** — готовый конфиг клиента со встроенным роутингом (RU-сегмент напрямую, реклама блокируется);
+- секции приложений **HAPP** и **incy** с кнопками роутинга GeoGaga.
 
-Если брать NL-локацию, то, возможно, получится урвать ВПС без рекламы на ютубе.
+Рекомендуемые клиенты: [HAPP](https://www.happ.su/main/ru) и [incy](https://incy.cc/) (iOS, Android, Windows, macOS, Linux).
 
-Промо-тарифы постоянно заканчиваются и, как правило, сильно урезаны.
+## Мост RU → EU
 
-**RU VPS (для моста ru-eu)**
-- [time-host](https://time-host.net/?from=47217 ) - от 140 руб./мес.
-- [hosting-russia](https://hosting-russia.ru/?p=57731) - от 250 руб./мес.
-- [CloudCore](https://cloudcore.ru/?affiliate_uuid=e9ad7432-7898-4de2-8606-38eb90e0c1a6) - от 100 руб./мес.
+Если российский провайдер режет зарубежные VPS, трафик можно завести через RU-сервер:
 
+1. Установите `autoXRAY1.sh` на EU-VPS и скопируйте из консоли ссылку **VLESS — XHTTP REALITY** (для моста).
+2. Установите мост на RU-VPS, передав ссылку аргументом:
 
-
-Имейте в виду, что подсети популярных хостинг-провайдеров, таких как аеза, pq(ufo), ishosting и др., заблокированы многими провайдерами(РКН). К ним порой даже невозможно подключиться по SSH (без VPN). Поэтому, пожалуйста, не используйте их или не жалуйтесь, что у вас не работает основной скрипт.
-
-
-## Получаем домен
-
-**Получаем бесплатный поддомен**: регестрируемся в [cloudns](https://www.cloudns.net/aff/id/1919804/). Далее: Управление -> DNS Хостинг -> Создать зону -> Свободная зона -> вводим рандомное имя для поддомена.
-Теперь надо создать A-запись: Новая запись -> Тип А -> Хост (имя субдомена) -> Указывает на (IP адрес вашего VPS).
-
-Еще бесплатный поддомен можно получить тут: https://www.duckdns.org/ или https://freedns.afraid.org/
-
-**Платный домен и бесплатный днс-хостинг можно получить** в [senko.digital](https://senko.digital/?ref=47670). Здесь же можно арендовать промо VPS.
-Платные сервисы, как правило, работают стабильнее.
-
-Помните, что DNS-записи обновляются не сразу: иногда это занимает 15 минут, иногда — час и более. Проверить - [xseo.in/dns](https://xseo.in/dns).
-
-
-
-## Настройка VPN
-**Скопируйте конфиг (страничка подписки) в специализированное приложение:**
-
-- iOS/macOS: [Happ](https://www.happ.su/main/ru) или [v2rayTun](https://v2raytun.com/) | (FoXray, Hiddify)
-- Android: [Happ](https://www.happ.su/main/ru) или [v2rayTun](https://v2raytun.com/) | (v2rayNG, SimpleXray)
-- Windows: [Happ](https://www.happ.su/main/ru) или [winLoadXray](https://github.com/xVRVx/winLoadXRAY/releases/latest/download/winLoadXRAY.exe) или [v2rayN](https://github.com/2dust/v2rayN/releases/) | (v2rayTun, Throne, Hiddify)
-- Linux: [Happ](https://www.happ.su/main/ru) или [v2rayN](https://github.com/2dust/v2rayN/releases/) | (Throne, Hiddify)
-
-() - не поддерживают клиентский конфиг, только vless:// (конфиг для роутера).
-
-
-===========================================================================
-
-## Пояснение и рекомендации
-
-Сейчас в сети много инструкций по установке GUI-панелей, таких как PasarGuard, 3x-ui или новая RemnaWave. Однако все они избыточны для домашнего использования, так как предназначены для крупных проектов и отличаются высокой сложностью настройки (также используют ядро xray). 
-
-Мануал, который необходимо пройти до получения первого рабочего конфига, занимает более 10 страниц. 
-Кроме того, подходящий конфиг для Xray нужно ещё поискать и правильно настроить — с этим отлично справляется данный скрипт.
-
-Без GUI и базы данных Xray потребляет меньше ресурсов сервера и отлично подходит для запуска на слабых VPS-конфигурациях!
-
-При каждом запуске autoXRAY генерирует новые UUID, ключи и пароли для защиты пользователей.
-
-**Преимущества selfsteal**
-- Сайт всегда работает на вашем ВПС - устраняется точка отказа.
-- Ниже пинг - быстрее соединение.
-- Не используются CDN, которые есть на многих популярных сайтах.
-- Лучше маскировка - т.к. сайт находится в той же сети что и сервер.
-
-**Перейти на алгоритм BBR**
-Текущий скрипт автоматически настраивает включение BBR.
-Если у вас много одновременных подключений, то можно включить алгоритм BBR (от гугла) - поможет повысить пропускную способность VPN.
-Проверка текущего алгоритма: sysctl net.ipv4.tcp_congestion_control
-
-
-## Как обновить autoXRAY
-
-**Весь скрипт**: если пользуетесь подпиской, то запомните ее ссылку, переустановите скрипт и поменяйте путь на старый в /var/www/домен/xxxXXXxxx.json после этого обновите подписку в приложении.
-Если только ключами, то такой возможности нет. P.S.: удобно воспользоваться QR-кодом для переноса на мобильное устройство.
-
-**Только ядро**
 ```bash
-bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
+bash <(curl -sL https://github.com/xVRVx/autoXRAY/raw/refs/heads/main/autoXRAYselfRUbrEUxhttp.sh) поддомен.ваш.домен.com "vless://ссылка-из-консоли-EU"
 ```
-**Обновить WARP-cli**
+
+Можно передать несколько ссылок через пробел. Для каждой EU-ноды мост создаёт два конфига через себя (флаг страны RU-VPS) и один прямой (флаг страны ноды), балансировка — leastLoad.
+
+## Обновление и удаление
+
 ```bash
-bash <(curl -fsSL https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh) v
+# обновить Xray-ядро
+bash -c "$(curl -sL https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ update
+# полное удаление: xray, nginx-конфиг, сайт и сертификаты
+systemctl stop xray && rm -rf /usr/local/etc/xray /var/www/ваш.домен.com
 ```
 
-## Как удалить скрипт
-**Удаляем nginx & certbot**
-```
-systemctl disable nginx certbot; systemctl stop nginx certbot; apt remove nginx certbot -y
-```
+## Поддержать автора
 
-**Удаляем WARP-cli**
-```
-echo -e "y" | bash <(curl -fsSL https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh) u
-```
-
-**Удаляем XRAY**
-```
-bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ remove --purge
-```
-
-**Удаляем MTProto Telemt**
-```
-systemctl stop telemt; systemctl disable telemt; rm -f /etc/systemd/system/telemt.service /bin/telemt; systemctl daemon-reload
-```
-
-## Создание конфигов для нескольких пользователей
-
-Это не нужно, потому что одним конфигом могут пользоваться сразу несколько человек, а чтобы управлять пользователями, следить за их трафиком нужны уже gui панели: 3x-ui или Remnawave, PasarGuard.
-
-## Смена паролей и сайта маскировки
-
-Запустите скрипт заново - он сформирует новые конфигурации VPN для YouTube, chatGPT и других нужных сайтов.
-
-## Повышенная маскировка
-
-Настоятельно рекомендуется: сменить порт ssh со стандартного 22 на другой и/или сделать вход на сервер по ключу. Настроить файрвол и оставить открытыми порты для работы скрипта: ваш ssh порт, 80 для certbot, 443, 8443, 10443 для xray, 2408 для warp
-
-Если вы хотите погрузиться в дело конфигурации xray есть отличный [справочник](https://xtls.github.io/ru/config/outbounds/vless.html) и [руководство](https://github.com/XTLS/Xray-core/discussions/3518).
-
-Редактировать конфиг можно тут: **/usr/local/etc/xray/config.json**
-
-После изменений ядро надо перезапустить: **systemctl restart xray**
-
-
-===========================================================================
-
-## Настраиваем мост RU -> EU
-Многие столкнулись с блокировками хостинг-сетей по TLS (особенно при использовании мобильного интернета). Существует решение — построение моста между серверами в разных локациях. Для этого необходимо:
-
-1) На заблокированный чистый VPS ставим стандартный рекомендованный скрипт и берем получившийся vless XHTTP reality EXTRA (конфиг №1):
-```bash
-bash -c "$(curl -L https://raw.githubusercontent.com/xVRVx/autoXRAY/main/autoXRAY1.sh)" -- поддомен1.вашДОМЕН.com
-
-```
-2) На ru VPS ставим новый скрипт (здесь нам понадобится vless XHTTP reality EXTRA конфиг №1):
-```bash
-bash -c "$(curl -L https://raw.githubusercontent.com/xVRVx/autoXRAY/main/autoXRAYselfRUbrEUxhttp.sh)" -- поддомен2.вашДОМЕН.com "vless://вашКонфигXHTTP"
-```
-Установится прокси мост между серверами, итоговая цепочка: конфиг клиента -> ru VPS -> eu VPS -> зарубежный сайт
-
-Теперь можно использовать несколько xhttp конфигов, все они будут добавлены в мост.
-
--- поддомен2.Домен.Ком "vless://xhttp1" "vless://xhttp2" "vless://xhttp3"
-
-===========================================================================
-
-**Если вы хотите пускать YouTube через ruVPS (у вас он без ТСПУ или вы поставили и настроили [zapret4rocket](https://github.com/IndeecFOX/zapret4rocket))**
-
-Тогда в конфиге ruVPS, который лежит /usr/local/etc/xray/config.json надо добавить в секцию "domain": [сюда], "outboundTag": "direct"
-```bash
-"geosite:youtube",
-"youtube.com",
-"googlevideo.com",
-"ytimg.com",
-"ggpht.com",
-```
-и перезапустить ядро: **systemctl restart xray**
-
-===========================================================================
-
-## Отключение или рекдактирование маршрутов WARP-cli
-В конфиге /usr/local/etc/xray/config.json находим 
-```bash
-	{
-	  "outboundTag": "warp",
-	  "domain": ["2ip.io","habr.com","geosite:google-gemini","geosite:canva","geosite:openai","geosite:whatsapp","geosite:category-ru"]
-	}
-```
-**Чтобы отключить**: меняем "outboundTag": "warp" на "outboundTag": "direct"
-
-
-**Чтобы рекдактировать**: меняем строку "domain"
-
-После изменений ядро надо перезапустить: **systemctl restart xray**
-
-После этого можно удалить WARP-cli, если это необходимо.
-
-**Если возникла ошбика при установке WARP** - [читайте инструкцию.](https://github.com/xVRVx/autoXRAY/blob/main/test/warp-readme.md)
-
-===========================================================================
-# Сборка с MTProto proxy FakeTLS для ТГ
-
-В связи с начавшейся блокировкой Telegram выпускаю новую сборку с MTProxy на порту 443 и маскировкой под собственный сайт на основе [Telemt](https://github.com/telemt/telemt/blob/main/docs/QUICK_START_GUIDE.ru.md).
-
-**Принцип работы**
-
-443 XRAY -> MTP TELEMT -> сайт заглушка
-
-Конфигурация: /etc/telemt/telemt.toml
-
-===========================================================================
-
-Скрипты будут дорабатываться до актуального состояния.
-
-**[Поддержать автора.](https://pay.trybit.com/pos/Weu1Y0fOhLho0nte)**
+https://github.com/xVRVx/autoXRAY

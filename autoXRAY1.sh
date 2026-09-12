@@ -15,6 +15,31 @@ if [ -z "$DOMAIN" ]; then
     exit 1
 fi
 
+# === ХЕЛПЕРЫ ===
+# Percent-кодирование строки (побайтово, для фрагмента #... в ссылках)
+urlencode() {
+    local LC_ALL=C s="$1" out="" i c h
+    for (( i=0; i<${#s}; i++ )); do
+        c="${s:$i:1}"
+        case "$c" in
+            [a-zA-Z0-9.~_-]) out+="$c" ;;
+            *) printf -v h '%%%02X' "'$c"; out+="$h" ;;
+        esac
+    done
+    printf '%s' "$out"
+}
+
+# Код страны (2 буквы) -> эмодзи-флаг (regional indicator symbols)
+cc_to_flag() {
+    local cc="$1" flag="" k cp
+    for (( k=0; k<${#cc}; k++ )); do
+        cp=$(( 0x1F1E6 + $(printf '%d' "'${cc:$k:1}") - 65 ))
+        flag+="$(printf "\U$(printf '%08x' "$cp")")"
+    done
+    printf '%s' "$flag"
+}
+# ===============
+
 echo -e "${YEL}Обновление и установка необходимых пакетов...${NC}"
 apt-get update && apt-get install curl jq dnsutils openssl nginx certbot wget tar -y
 systemctl enable --now nginx
@@ -35,6 +60,27 @@ if [ "$LOCAL_IP" != "$DNS_IP" ]; then
     echo -e "${YEL}Продолжение выполнения скрипта...${NC}"
 fi
 
+# === ОПРЕДЕЛЕНИЕ СТРАНЫ VPS (для флага в названиях конфигов) ===
+COUNTRY_CODE=$(curl -s --max-time 5 "http://ip-api.com/line?fields=countryCode" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')
+if [[ ! "$COUNTRY_CODE" =~ ^[A-Z]{2}$ ]]; then
+    COUNTRY_CODE=$(curl -s --max-time 5 "https://ipinfo.io/country" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')
+fi
+if [[ ! "$COUNTRY_CODE" =~ ^[A-Z]{2}$ ]]; then
+    echo -e "${YEL}Не удалось автоматически определить страну VPS.${NC}"
+    read -p "Введите код страны из 2 букв (например DE; по умолчанию EU): " cc_input
+    COUNTRY_CODE=${cc_input:-EU}
+    COUNTRY_CODE=$(echo "$COUNTRY_CODE" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')
+fi
+FLAG=$(cc_to_flag "$COUNTRY_CODE")
+
+# Имена конфигов: флаг VPS + протокол (тип транспорта виден в клиенте)
+VLESS_NAME="$FLAG VLESS"
+HY2_NAME="$FLAG HYSTERIA2"
+VLESS_NAME_ENC=$(urlencode "$VLESS_NAME")
+HY2_NAME_ENC=$(urlencode "$HY2_NAME")
+
+echo -e "${GRN}Страна VPS: ${COUNTRY_CODE} ${FLAG} — конфиги будут названы «${FLAG} ПРОТОКОЛ»${NC}"
+
 # === ВОПРОСЫ ПОЛЬЗОВАТЕЛЮ ===
 read -p "$(echo -e "\n${YEL}Устанавливать WARP для обхода блокировок некоторых сайтов? (y/n, по умолчанию n): ${NC}")" choice_warp
 choice_warp=${choice_warp:-n}
@@ -44,16 +90,6 @@ if [[ "$choice_warp" =~ ^[Yy]$ ]]; then
 else
     TAG_WARP="direct"
     INSTALL_WARP=false
-fi
-
-read -p "$(echo -e "\n${YEL}Устанавливать MTProxy для Telegram? (y/n, по умолчанию y): ${NC}")" choice_mtp
-choice_mtp=${choice_mtp:-y}
-if [[ "$choice_mtp" =~ ^[Yy]$ ]]; then
-    TARGET_MTP="127.0.0.1:500"
-    INSTALL_MTP=true
-else
-    TARGET_MTP="/dev/shm/nginx.sock"
-    INSTALL_MTP=false
 fi
 
 echo -e "\n${YEL}Выберите TLS fingerprint для маскировки трафика:${NC}"
@@ -333,7 +369,7 @@ else
 fi
 
 # Экспортируем переменные для envsubst
-export xray_uuid_vrv xray_privateKey_vrv xray_publicKey_vrv xray_shortIds_vrv xray_sspasw_vrv DOMAIN path_subpage path_xhttp WEB_PATH socksUser socksPasw TARGET_MTP TAG_WARP fpBro
+export xray_uuid_vrv xray_privateKey_vrv xray_publicKey_vrv xray_shortIds_vrv xray_sspasw_vrv DOMAIN path_subpage path_xhttp WEB_PATH socksUser socksPasw TAG_WARP fpBro
 
 # Создаем JSON конфигурацию сервера
 cat << 'EOF' | envsubst > "$SCRIPT_DIR/config.json"
@@ -391,7 +427,7 @@ cat << 'EOF' | envsubst > "$SCRIPT_DIR/config.json"
         "realitySettings": {
           "show": false,
           "xver": 2,
-          "target": "${TARGET_MTP}",
+          "target": "/dev/shm/nginx.sock",
           "spiderX": "/",
           "shortIds": [
             "${xray_shortIds_vrv}"
@@ -1067,19 +1103,17 @@ HYSTERIA2='{
 
 (
   echo "["
-  print_config "$OUT_REALITY_XHTTP"  "🇪🇺 VLESS XHTTP REALITY EXTRA"
+  print_config "$OUT_REALITY_VISION" "$VLESS_NAME"
   echo ","
-  print_config "$OUT_REALITY_VISION" "🇪🇺 VLESS RAW REALITY VISION"
+  print_config "$HYSTERIA2" "$HY2_NAME"
   echo ","
-  print_config "$HYSTERIA2" "🇪🇺 HYSTERIA2"
+  print_config "$OUT_VISION" "$VLESS_NAME"
   echo ","
-  print_config "$OUT_VISION"    "🇪🇺 VLESS RAW TLS VISION"
+  print_config "$OUT_XHTTP" "$VLESS_NAME"
   echo ","
-  print_config "$OUT_XHTTP"     "🇪🇺 VLESS XHTTP TLS EXTRA"
+  print_config "$OUT_GRPC" "$VLESS_NAME"
   echo ","
-  print_config "$OUT_GRPC"      "🇪🇺 VLESS gRPC TLS"
-  echo ","
-  print_config "$OUT_WS"        "🇪🇺 VLESS WS TLS"
+  print_config "$OUT_WS" "$VLESS_NAME"
   echo "]"
 ) | envsubst > "$WEB_PATH/$path_subpage.json"
 
@@ -1091,138 +1125,206 @@ subPageLink="https://$DOMAIN/$path_subpage.json"
 
 									   
 
-hy2="hy2://${xray_shortIds_vrv}@$DOMAIN:8080/?sni=$DOMAIN&alpn=h3"
+hy2="hy2://${xray_shortIds_vrv}@$DOMAIN:8080/?sni=$DOMAIN&alpn=h3#$HY2_NAME_ENC"
 
-linkRTY1="vless://${xray_uuid_vrv}@$DOMAIN:443?security=reality&type=tcp&headerType=&path=&host=&flow=xtls-rprx-vision&sni=$DOMAIN&fp=$fpBro&pbk=${xray_publicKey_vrv}&sid=${xray_shortIds_vrv}&spx=%2F#vlessRAWrealityVISION-autoXRAY"
+linkRTY1="vless://${xray_uuid_vrv}@$DOMAIN:443?security=reality&type=tcp&headerType=&path=&host=&flow=xtls-rprx-vision&sni=$DOMAIN&fp=$fpBro&pbk=${xray_publicKey_vrv}&sid=${xray_shortIds_vrv}&spx=%2F#$VLESS_NAME_ENC"
 
-linkRTY2="vless://${xray_uuid_vrv}@$DOMAIN:443?security=reality&type=xhttp&headerType=&path=%2F$path_xhttp&host=&mode=stream-one&extra=%7B%22xmux%22%3A%7B%22cMaxReuseTimes%22%3A%221000-3000%22%2C%22maxConcurrency%22%3A%223-5%22%2C%22maxConnections%22%3A0%2C%22hKeepAlivePeriod%22%3A0%2C%22hMaxRequestTimes%22%3A%22400-700%22%2C%22hMaxReusableSecs%22%3A%221200-1800%22%7D%2C%22headers%22%3A%7B%7D%2C%22noGRPCHeader%22%3Afalse%2C%22xPaddingBytes%22%3A%22400-800%22%2C%22scMaxEachPostBytes%22%3A1500000%2C%22scMinPostsIntervalMs%22%3A20%2C%22scStreamUpServerSecs%22%3A%2260-240%22%7D&sni=$DOMAIN&fp=$fpBro&pbk=${xray_publicKey_vrv}&sid=${xray_shortIds_vrv}&spx=%2F#vlessXHTTPrealityEXTRA-autoXRAY"
+linkRTY2="vless://${xray_uuid_vrv}@$DOMAIN:443?security=reality&type=xhttp&headerType=&path=%2F$path_xhttp&host=&mode=stream-one&extra=%7B%22xmux%22%3A%7B%22cMaxReuseTimes%22%3A%221000-3000%22%2C%22maxConcurrency%22%3A%223-5%22%2C%22maxConnections%22%3A0%2C%22hKeepAlivePeriod%22%3A0%2C%22hMaxRequestTimes%22%3A%22400-700%22%2C%22hMaxReusableSecs%22%3A%221200-1800%22%7D%2C%22headers%22%3A%7B%7D%2C%22noGRPCHeader%22%3Afalse%2C%22xPaddingBytes%22%3A%22400-800%22%2C%22scMaxEachPostBytes%22%3A1500000%2C%22scMinPostsIntervalMs%22%3A20%2C%22scStreamUpServerSecs%22%3A%2260-240%22%7D&sni=$DOMAIN&fp=$fpBro&pbk=${xray_publicKey_vrv}&sid=${xray_shortIds_vrv}&spx=%2F#$VLESS_NAME_ENC"
 
-linkTLS1="vless://${xray_uuid_vrv}@$DOMAIN:8443?security=tls&type=tcp&headerType=&path=&host=&flow=xtls-rprx-vision&sni=$DOMAIN&fp=$fpBro&spx=%2F#vlessRAWtlsVision-autoXRAY"
+linkTLS1="vless://${xray_uuid_vrv}@$DOMAIN:8443?security=tls&type=tcp&headerType=&path=&host=&flow=xtls-rprx-vision&sni=$DOMAIN&fp=$fpBro&spx=%2F#$VLESS_NAME_ENC"
 
 
-linkTLS2="vless://${xray_uuid_vrv}@$DOMAIN:8443?security=tls&type=xhttp&headerType=&path=%2F${path_xhttp}&host=&mode=auto&extra=%7B%22xmux%22%3A%7B%22cMaxReuseTimes%22%3A%221000-3000%22%2C%22maxConcurrency%22%3A%223-5%22%2C%22maxConnections%22%3A0%2C%22hKeepAlivePeriod%22%3A0%2C%22hMaxRequestTimes%22%3A%22400-700%22%2C%22hMaxReusableSecs%22%3A%221200-1800%22%7D%2C%22headers%22%3A%7B%7D%2C%22noGRPCHeader%22%3Afalse%2C%22xPaddingBytes%22%3A%22400-800%22%2C%22scMaxEachPostBytes%22%3A1500000%2C%22scMinPostsIntervalMs%22%3A20%2C%22scStreamUpServerSecs%22%3A%2260-240%22%7D&sni=$DOMAIN&fp=$fpBro&spx=%2F#vlessXHTTPtls-autoXRAY"
+linkTLS2="vless://${xray_uuid_vrv}@$DOMAIN:8443?security=tls&type=xhttp&headerType=&path=%2F${path_xhttp}&host=&mode=auto&extra=%7B%22xmux%22%3A%7B%22cMaxReuseTimes%22%3A%221000-3000%22%2C%22maxConcurrency%22%3A%223-5%22%2C%22maxConnections%22%3A0%2C%22hKeepAlivePeriod%22%3A0%2C%22hMaxRequestTimes%22%3A%22400-700%22%2C%22hMaxReusableSecs%22%3A%221200-1800%22%7D%2C%22headers%22%3A%7B%7D%2C%22noGRPCHeader%22%3Afalse%2C%22xPaddingBytes%22%3A%22400-800%22%2C%22scMaxEachPostBytes%22%3A1500000%2C%22scMinPostsIntervalMs%22%3A20%2C%22scStreamUpServerSecs%22%3A%2260-240%22%7D&sni=$DOMAIN&fp=$fpBro&spx=%2F#$VLESS_NAME_ENC"
 
-linkTLS3="vless://${xray_uuid_vrv}@$DOMAIN:8443?security=tls&type=ws&headerType=&path=%2F${path_xhttp}22&host=&sni=$DOMAIN&fp=$fpBro&spx=%2F#vlessWStls-autoXRAY"
+linkTLS3="vless://${xray_uuid_vrv}@$DOMAIN:8443?security=tls&type=ws&headerType=&path=%2F${path_xhttp}22&host=&sni=$DOMAIN&fp=$fpBro&spx=%2F#$VLESS_NAME_ENC"
 
-linkTLS4="vless://${xray_uuid_vrv}@$DOMAIN:8443?security=tls&type=grpc&headerType=&serviceName=${path_xhttp}11&host=&sni=$DOMAIN&fp=$fpBro&spx=%2F#vlessGRPCtls-autoXRAY"
+linkTLS4="vless://${xray_uuid_vrv}@$DOMAIN:8443?security=tls&type=grpc&headerType=&serviceName=${path_xhttp}11&host=&sni=$DOMAIN&fp=$fpBro&spx=%2F#$VLESS_NAME_ENC"
 
 configListLink="https://$DOMAIN/$path_subpage.html"
 
+# Формат элемента: Имя (флаг+протокол)|Бейдж транспорта на странице|Ссылка
+# Конфиг VLESS XHTTP REALITY EXTRA (linkRTY2) на страницу не попадает: он нужен
+# только администратору для настройки моста RU->EU (печатается в консоль).
 CONFIGS_ARRAY=(
-    "VLESS XHTTP REALITY EXTRA (для моста)|$linkRTY2"
-    "VLESS RAW REALITY VISION|$linkRTY1"
-	"HYSTERIA2|$hy2"
-	"VLESS RAW TLS VISION|$linkTLS1"
-	"VLESS XHTTP TLS EXTRA|$linkTLS2"
-	"VLESS WS TLS|$linkTLS3"
-	"VLESS GRPC TLS|$linkTLS4"
+    "$VLESS_NAME|REALITY • Vision|$linkRTY1"
+    "$HY2_NAME|UDP • QUIC|$hy2"
+    "$VLESS_NAME|TLS • Vision|$linkTLS1"
+    "$VLESS_NAME|TLS • XHTTP|$linkTLS2"
+    "$VLESS_NAME|TLS • WS|$linkTLS3"
+    "$VLESS_NAME|TLS • gRPC|$linkTLS4"
 )
 ALL_LINKS_TEXT=""
 
-if [ "$INSTALL_MTP" = true ]; then
-    echo -e "\n\n${GRN}Устанавливаем MTProto FakeTLS ${NC}"
-    source <(curl -sL https://github.com/xVRVx/autoXRAY/raw/refs/heads/main/test/telemt-test.sh)
-else
-    echo -e "\n\n${YEL}Установка MTProto FakeTLS пропущена.${NC}"
-    MTProto=""
-fi
-
-# --- ЗАПИСЬ HEAD (СТАТИКА, МИНИФИЦИРОВАННЫЕ СТИЛИ И JS) ---
+# --- ЗАПИСЬ HEAD (СТАТИКА: СТИЛИ И JS) ---
 cat > "$WEB_PATH/$path_subpage.html" <<'EOF'
-<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
 <meta name="robots" content="noindex,nofollow">
-<title>autoXRAY configs</title>
-<link rel="icon" type="image/svg+xml" href='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMDBCRkZGIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTIxIDJsLTIgMm0tNy42MSA3LjYxYTUuNSA1LjUgMCAxIDEtNy43NzggNy43NzggNS41IDUuNSAwIDAgMSA3Ljc3Ny03Ljc3N3ptMCAwTDE1LjUgNy41bTAgMGwzIDNMMjIgN2wtMy0zbS0zLjUgMy41TDE5IDQiLz48L3N2Zz4='>
+<title>Конфигурации — autoXRAY</title>
+<link rel="icon" type="image/svg+xml" href='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNEY4Q0ZGIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTIxIDJsLTIgMm0tNy42MSA3LjYxYTUuNSA1LjUgMCAxIDEtNy43NzggNy43NzggNS41IDUuNSAwIDAgMSA3Ljc3Ny03Ljc3N3ptMCAwTDE1LjUgNy41bTAgMGwzIDNMMjIgN2wtMy0zbS0zLjUgMy41TDE5IDQiLz48L3N2Zz4='>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
-body{font-family:monospace;background:#121212;color:#e0e0e0;padding:10px;max-width:900px;margin:0 auto}h2{color:#c3e88d;border-top:2px solid #333;padding-top:20px;margin:15px 0 10px;font-size:18px}.config-row{background:#1e1e1e;border:1px solid #333;border-radius:6px;padding:5px;display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:8px}.config-label{background:#2c2c2c;color:#82aaff;padding:6px 10px;border-radius:4px;font-weight:700;font-size:13px;white-space:nowrap;min-width:140px;text-align:center}.config-code{flex:1;white-space:nowrap;overflow-x:auto;padding:8px;background:#121212;border-radius:4px;color:#c3e88d;font-size:12px;scrollbar-width:none}.config-code::-webkit-scrollbar{display:none}.btn-action{border:1px solid #555;padding:6px 12px;border-radius:4px;cursor:pointer;font-weight:700;font-size:12px;transition:all .2s;height:32px;display:flex;align-items:center;justify-content:center}.copy-btn{background:#333;color:#e0e0e0;min-width:60px}.copy-btn:hover{background:#c3e88d;color:#121212;border-color:#c3e88d}.qr-btn{background:#333;color:#82aaff;border-color:#82aaff;min-width:40px}.qr-btn:hover{background:#82aaff;color:#121212}.btn-group{display:flex;gap:10px;margin:10px 0 20px}.btn{flex:1;background:#2c2c2c;color:#c3e88d;border:1px solid #c3e88d;padding:10px;text-align:center;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px}.btn:hover{background:#c3e88d;color:#121212}.btn.download{border-color:#82aaff;color:#82aaff}.btn.download:hover{background:#82aaff;color:#121212}.btn.tg{border-color:#2AABEE;color:#2AABEE}.btn.tg:hover{background:#2AABEE;color:#fff}.modal-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.85);z-index:999;justify-content:center;align-items:center;backdrop-filter:blur(3px)}.modal-content{background:#1e1e1e;padding:20px;border-radius:10px;border:1px solid #82aaff;text-align:center}#qrcode{background:#fff;padding:10px;border-radius:6px;margin-bottom:10px}.close-modal-btn{background:#c31e1e;color:#fff;border:none;padding:8px 20px;border-radius:4px;cursor:pointer}@media(max-width:600px){.config-label{width:100%;margin-bottom:2px}.config-code{min-width:100%;order:3}.btn-action{flex:1;order:2}}
+:root{--bg:#0a0d13;--card:#11161f;--field:#0d1119;--border:#1f2937;--text:#e7ecf5;--muted:#8a93a6;--accent:#4f8cff;--accent-soft:rgba(79,140,255,.13);--accent-border:rgba(79,140,255,.32);--ok:#34d399;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+*{margin:0;padding:0;box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;font-size:15px;line-height:1.55;padding:32px 16px 56px;max-width:860px;margin:0 auto;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none}
+.page-head{display:flex;align-items:center;gap:14px;margin-bottom:30px}
+.logo{width:44px;height:44px;border-radius:12px;background:var(--accent-soft);border:1px solid var(--accent-border);display:flex;align-items:center;justify-content:center;flex:none}
+.page-title{font-size:20px;font-weight:700;letter-spacing:.2px}
+.page-sub{font-size:13px;color:var(--muted);font-family:var(--mono)}
+.section{margin-bottom:28px}
+.section-title{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin-bottom:12px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px}
+.url{flex:1;min-width:0;font-family:var(--mono);font-size:12.5px;color:#9cc0ff;white-space:nowrap;overflow-x:auto;scrollbar-width:none;background:var(--field);border:1px solid var(--border);border-radius:10px;padding:9px 12px}
+.url::-webkit-scrollbar{display:none}
+.linkbox{display:flex;align-items:center;gap:10px}
+.hint{font-size:12.5px;color:var(--muted);margin-top:10px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border-radius:10px;border:1px solid transparent;padding:9px 16px;font-size:13.5px;font-weight:600;cursor:pointer;transition:background .15s,border-color .15s,color .15s;font-family:inherit;white-space:nowrap}
+.btn:active{transform:translateY(1px)}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{background:#3d7ae8}
+.btn-ghost{background:transparent;color:var(--text);border-color:var(--border)}
+.btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
+.btn-sm{padding:7px 12px;font-size:12.5px;border-radius:8px}
+.btn-ok{background:var(--ok)!important;color:#04110b!important;border-color:var(--ok)!important}
+.btn-row{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
+.apps{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+.app{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px}
+.app-name{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}
+.app-desc{font-size:13px;color:var(--muted);margin-top:7px}
+.cfg{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.cfg-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}
+.cfg-name{font-weight:700;font-size:14.5px}
+.badge{font-size:11px;font-weight:600;color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent-border);border-radius:999px;padding:2px 10px;white-space:nowrap}
+.cfg-body{display:flex;align-items:center;gap:10px}
+.allbox{font-family:var(--mono);font-size:12px;color:#9cc0ff;background:var(--field);border:1px solid var(--border);border-radius:10px;padding:10px 12px;max-height:130px;overflow:auto;white-space:pre-wrap;word-break:break-all;line-height:1.8}
+.foot{text-align:center;margin-top:36px;font-size:12.5px;color:var(--muted)}
+.modal{display:none;position:fixed;inset:0;background:rgba(4,6,10,.85);z-index:99;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+.modal.open{display:flex}
+.modal-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:20px;text-align:center}
+#qrcode{background:#fff;padding:10px;border-radius:10px;margin-bottom:14px}
+@media(max-width:560px){.linkbox{flex-wrap:wrap}.linkbox .url{flex-basis:100%}.cfg-body{flex-wrap:wrap}.cfg-body .url{flex-basis:100%;order:-1}.btn-row .btn{flex:1}}
 </style>
 <script>
-function copyText(e,t){navigator.clipboard.writeText(document.getElementById(e).innerText).then(()=>{let o=t.innerText;t.innerText="OK",t.style.cssText="background:#c3e88d;color:#121212",setTimeout(()=>{t.innerText=o,t.style.cssText=""},1500)}).catch(e=>console.error(e))}function showQR(e){let t=document.getElementById(e).innerText,o=document.getElementById("qrModal"),n=document.getElementById("qrcode");n.innerHTML="",new QRCode(n,{text:t,width:256,height:256,colorDark:"#000000",colorLight:"#ffffff",correctLevel:QRCode.CorrectLevel.L}),o.style.display="flex"}function closeModal(){document.getElementById("qrModal").style.display="none"}window.onclick=function(e){e.target==document.getElementById("qrModal")&&closeModal()};
+function copyText(id,btn){var t=document.getElementById(id).innerText;function done(){var o=btn.innerText;btn.innerText="Скопировано";btn.classList.add("btn-ok");setTimeout(function(){btn.innerText=o;btn.classList.remove("btn-ok")},1400)}function fallback(){var ta=document.createElement("textarea");ta.value=t;document.body.appendChild(ta);ta.select();try{document.execCommand("copy");done()}catch(e){}document.body.removeChild(ta)}if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(done).catch(fallback)}else{fallback()}}
+function showQR(id){var t=document.getElementById(id).innerText,q=document.getElementById("qrcode"),m=document.getElementById("qrModal");q.innerHTML="";new QRCode(q,{text:t,width:240,height:240,colorDark:"#000000",colorLight:"#ffffff",correctLevel:QRCode.CorrectLevel.L});m.classList.add("open")}
+function closeModal(){document.getElementById("qrModal").classList.remove("open")}
+window.onclick=function(e){if(e.target==document.getElementById("qrModal"))closeModal()};
+document.addEventListener("keydown",function(e){if(e.key==="Escape")closeModal()});
 </script>
-</head><body>
+</head>
+<body>
 EOF
 
 # --- ЗАПИСЬ BODY (ДИНАМИЧЕСКИЕ ДАННЫЕ) ---
 cat >> "$WEB_PATH/$path_subpage.html" <<EOF
 
-<h2>📂 Ссылка на подписку (готовый конфиг клиента с роутингом)</h2>
-<div class="config-row">
-    <div class="config-label">Subscription</div>
-    <div class="config-code" id="subLink">$subPageLink</div>
-    <button class="btn-action copy-btn" onclick="copyText('subLink', this)">Copy</button>
-    <button class="btn-action qr-btn" onclick="showQR('subLink')">QR</button>
+<div class="page-head">
+    <div class="logo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4f8cff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg></div>
+    <div>
+        <div class="page-title">Конфигурации</div>
+        <div class="page-sub">$DOMAIN</div>
+    </div>
 </div>
 
-
-<h2>📱 Приложение HAPP (Windows/Android/iOS/MAC/Linux)</h2>
-
-<div class="btn-group">
-    <a href="happ://add/$subPageLink" class="btn">⚡ Add to HAPP</a>
-    <a href="https://www.happ.su/main/ru" target="_blank" class="btn download">⬇️ Download App</a>
+<div class="section">
+    <div class="section-title">Подписка</div>
+    <div class="card">
+        <div class="linkbox">
+            <div class="url" id="subLink">$subPageLink</div>
+            <button class="btn btn-ghost btn-sm" onclick="copyText('subLink', this)">Копировать</button>
+            <button class="btn btn-ghost btn-sm" onclick="showQR('subLink')">QR</button>
+        </div>
+        <div class="hint">Готовый конфиг клиента со встроенным роутингом — добавьте эту ссылку в приложение как подписку.</div>
+    </div>
 </div>
-<p>Маршрутизацию нужно выключить, она тут встроенная. По умолчанию она выключена - включается, если вы пользовались сторонними сервисами.</p>
 
+<div class="section">
+    <div class="section-title">Приложения</div>
+    <div class="apps">
+        <div class="app">
+            <div class="app-name">⚡ HAPP</div>
+            <div class="app-desc">Windows · Android · iOS · macOS · Linux</div>
+            <div class="btn-row">
+                <a class="btn btn-primary" href="happ://add/$subPageLink">Добавить подписку</a>
+                <a class="btn btn-ghost" href="https://www.happ.su/main/ru" target="_blank" rel="noopener">Скачать</a>
+            </div>
+            <div class="btn-row">
+                <a class="btn btn-ghost" href="https://geogaga-happ.rf.gd/" target="_blank" rel="noopener">Роутинг GeoGaga ↗</a>
+            </div>
+            <div class="hint">Роутинг уже встроен в подписку и по умолчанию выключен — включайте, только если пользовались сторонними сервисами.</div>
+        </div>
+        <div class="app">
+            <div class="app-name">🛡 incy</div>
+            <div class="app-desc">Клиент с открытым ядром: VLESS, Hysteria2, REALITY. iOS · Android · Windows · Linux · TV. Без логов.</div>
+            <div class="btn-row">
+                <a class="btn btn-primary" href="https://incy.cc/" target="_blank" rel="noopener">Скачать incy</a>
+            </div>
+            <div class="btn-row">
+                <a class="btn btn-ghost" href="https://geogaga-incy.rf.gd/" target="_blank" rel="noopener">Роутинг GeoGaga ↗</a>
+            </div>
+        </div>
+    </div>
+</div>
 
-<h2>➡️ Конфиги</h2>
+<div class="section">
+    <div class="section-title">Конфиги</div>
 EOF
 
-# Цикл генерации строк конфигов
+# Цикл генерации строк конфигов (элемент: Имя|Бейдж|Ссылка)
 idx=1
 for item in "${CONFIGS_ARRAY[@]}"; do
     title="${item%%|*}"
-    link="${item#*|}"
-    
+    rest="${item#*|}"
+    badge="${rest%%|*}"
+    link="${rest#*|}"
+
     if [ -z "$ALL_LINKS_TEXT" ]; then ALL_LINKS_TEXT="$link"; else ALL_LINKS_TEXT="$ALL_LINKS_TEXT<br>$link"; fi
-    
+
     cat >> "$WEB_PATH/$path_subpage.html" <<EOF
-<div class="config-row">
-    <div class="config-label">$title</div>
-    <div class="config-code" id="c$idx">$link</div>
-    <button class="btn-action copy-btn" onclick="copyText('c$idx', this)">Copy</button>
-    <button class="btn-action qr-btn" onclick="showQR('c$idx')">QR</button>
+<div class="cfg">
+    <div class="cfg-head"><span class="cfg-name">$title</span><span class="badge">$badge</span></div>
+    <div class="cfg-body">
+        <div class="url" id="c$idx">$link</div>
+        <button class="btn btn-ghost btn-sm" onclick="copyText('c$idx', this)">Копировать</button>
+        <button class="btn btn-ghost btn-sm" onclick="showQR('c$idx')">QR</button>
+    </div>
 </div>
 EOF
     ((idx++))
 done
 
-SOCKS5_url_tg="tg://socks?server=$DOMAIN&port=10443&user=${socksUser}&pass=${socksPasw}"
 SOCKS5_url="${socksUser}:${socksPasw}@$DOMAIN:10443"
 
 # Добавляем socks5 блок
 cat >> "$WEB_PATH/$path_subpage.html" <<EOF
-<div class="config-row">
-    <div class="config-label" title="Пора отказываться от него">socks5 WARNING</div>
-    <div class="config-code" id="socks5">${SOCKS5_url}</div>
-    <button class="btn-action copy-btn" onclick="copyText('socks5', this)">Copy</button>
+<div class="cfg">
+    <div class="cfg-head"><span class="cfg-name">socks5</span><span class="badge">доп. доступ</span></div>
+    <div class="cfg-body">
+        <div class="url" id="socks5">${SOCKS5_url}</div>
+        <button class="btn btn-ghost btn-sm" onclick="copyText('socks5', this)">Копировать</button>
+    </div>
 </div>
 EOF
-
-
-# Добавляем MTProxy блок только если он установлен
-if [ "$INSTALL_MTP" = true ]; then
-cat >> "$WEB_PATH/$path_subpage.html" <<EOF
-<div class="config-row">
-    <div class="config-label">MTProtoFakeTLS (TG)</div>
-    <div class="config-code" id="mtproto">${MTProto}</div>
-    <button class="btn-action copy-btn" onclick="copyText('mtproto', this)">Copy</button>
-    <a href="${MTProto}" target="_blank" class="btn-action qr-btn" title="автодобавление моста в тг" style="text-decoration:none">✈️ Add to TG</a>
-</div>
-EOF
-fi
 
 # Дописываем конец страницы
 cat >> "$WEB_PATH/$path_subpage.html" <<EOF
-<h2>💠 Все конфиги вместе</h2>
-<div class="config-row">
-    <div class="config-code" id="cAll" style="max-height:60px;white-space:pre-wrap;word-break:break-all">$ALL_LINKS_TEXT</div>
-    <button class="btn-action copy-btn" onclick="copyText('cAll', this)">Copy ALL</button>
-    <button class="btn-action qr-btn" onclick="showQR('cAll')">QR</button>
+<div class="card">
+    <div class="allbox" id="cAll">$ALL_LINKS_TEXT</div>
+    <div class="btn-row">
+        <button class="btn btn-ghost btn-sm" onclick="copyText('cAll', this)">Копировать все</button>
+        <button class="btn btn-ghost btn-sm" onclick="showQR('cAll')">QR</button>
+    </div>
+</div>
 </div>
 
-<div><a style="color:white;margin:40px auto 20px;display:block;text-align:center;" href="https://github.com/xVRVx/autoXRAY">https://github.com/xVRVx/autoXRAY</a></div>
+<div class="foot"><a href="https://github.com/xVRVx/autoXRAY" target="_blank" rel="noopener">autoXRAY on GitHub</a></div>
 
-<div id="qrModal" class="modal-overlay"><div class="modal-content"><div id="qrcode"></div><button class="close-modal-btn" onclick="closeModal()">Close</button></div></div>
+<div id="qrModal" class="modal"><div class="modal-card"><div id="qrcode"></div><button class="btn btn-ghost btn-sm" onclick="closeModal()">Закрыть</button></div></div>
 </body></html>
 EOF
 
@@ -1239,12 +1341,6 @@ if [ "$INSTALL_WARP" = true ]; then
         echo "https://github.com/xVRVx/autoXRAY/blob/main/test/warp-readme.md"
     fi
 fi
-
-# Проверка Telemt
-if [ "$INSTALL_MTP" = true ]; then
-    if systemctl is-active --quiet telemt; then echo -e "Telemt: ${GRN}RUNNING${NC}"; else echo -e "Telemt: ${RED}STOPPED/ERROR${NC}"; fi
-fi
-
 
 # Проверка Nginx
 if systemctl is-active --quiet nginx; then
@@ -1263,17 +1359,13 @@ fi
 
 echo -e "\n"
 
-if [ "$INSTALL_MTP" = true ]; then
-    echo -e "${YEL}MTProto FakeTLS для ТГ${NC}\n$MTProto\n"
-fi
-
-echo -e "${YEL}VLESS XHTTP REALITY EXTRA (для моста) ${NC}
+echo -e "${YEL}$VLESS_NAME — XHTTP REALITY (для моста RU->EU, пользователям не выдавать) ${NC}
 $linkRTY2
 
-${YEL}VLESS RAW REALITY VISION ${NC}
+${YEL}$VLESS_NAME — Reality Vision ${NC}
 $linkRTY1
 
-${YEL}VLESS XHTTP TLS EXTRA ${NC}
+${YEL}$VLESS_NAME — XHTTP TLS ${NC}
 $linkTLS2
 
 ${YEL}Ваша json страничка подписки ${NC}
@@ -1283,10 +1375,8 @@ ${YEL}Ссылка на сохраненные конфиги ${NC}
 ${GRN}$configListLink ${NC}
 
 Скопируйте подписку в специализированное приложение:
-- iOS: Happ или v2RayTun или v2rayN
-- Android: Happ или v2RayTun или v2rayNG
-- Windows: конфиги Happ или winLoadXRAY или v2rayN
-	для vless v2RayTun или Throne
+- iOS / Android: HAPP или incy
+- Windows / macOS / Linux: HAPP или incy
 
 Внутри клиента открыт socks5 на 10808, 2080 и http на 10809.
 

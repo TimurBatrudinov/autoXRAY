@@ -1,0 +1,2 @@
+# Скрипты исполняются на Linux (curl | bash) — только LF
+*.sh text eol=lf

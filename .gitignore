@@ -1,0 +1,18 @@
+# Локальные настройки Claude Code (содержат токены — не публиковать!)
+.claude/
+
+# Рабочие файлы задач
+TASK.md
+
+# Временные и preview-файлы
+preview*.html
+*.log
+*.tmp
+
+# Мусор ОС и редакторов
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+.vscode/
+.idea/
