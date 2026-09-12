@@ -22,6 +22,15 @@ if [ ${#VLESS_URLS[@]} -eq 0 ]; then
     exit 1
 fi
 
+# Домен должен выглядеть как домен (ловит «bash», «--», плейсхолдеры, кириллицу)
+if [[ ! "$DOMAIN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$ ]]; then
+    echo -e "${RED}❌ Ошибка: «$DOMAIN» не похоже на домен (пример: vpn.example.com).${NC}"
+    echo -e "${YEL}Домен указывается первым аргументом, vless-ссылки — далее:${NC}"
+    echo -e "${YEL}bash -c \"\$(curl -L <ссылка>)\" -- ваш.домен.com \"vless://...\"${NC}"
+    echo -e "${YEL}Кириллический домен укажите в punycode (xn--...).${NC}"
+    exit 1
+fi
+
 # Функция URL-декодинга (%XX -> байты).
 # Побайтовая версия: трюк с "${1//%/\\x}" + printf %b ломается в bash 5.2
 # (заменитель \x съедает обратный слэш), поэтому обходим строку вручную.
@@ -179,6 +188,18 @@ VLESS_NAME_ENC=$(urlencode "$VLESS_NAME")
 echo -e "${GRN}Страна VPS моста: ${COUNTRY_CODE} ${FLAG} — конфигы будут названы «${FLAG} ПРОТОКОЛ»${NC}"
 
 # === ВОПРОСЫ ПОЛЬЗОВАТЕЛЮ ===
+# E-mail для аккаунта Let's Encrypt (на него приходят уведомления об истечении)
+read -p "$(echo -e "\n${YEL}E-mail для уведомлений Let's Encrypt (Enter — без e-mail): ${NC}")" ACME_EMAIL
+while [ -n "$ACME_EMAIL" ] && [[ ! "$ACME_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]; do
+    echo -e "${RED}❌ Некорректный e-mail.${NC}"
+    read -p "$(echo -e "${YEL}Введите e-mail или нажмите Enter (без e-mail): ${NC}")" ACME_EMAIL
+done
+if [ -n "$ACME_EMAIL" ]; then
+    CERTBOT_EMAIL_ARGS=(-m "$ACME_EMAIL" --no-eff-email)
+else
+    CERTBOT_EMAIL_ARGS=(--register-unsafely-without-email)
+fi
+
 echo -e "\n${YEL}Выберите TLS fingerprint для маскировки трафика:${NC}"
 echo "1) chrome    3) safari   5) android   7) 360"
 echo "2) firefox   4) ios      6) edge      8) qq"
@@ -251,7 +272,7 @@ fi
 
 certbot certonly --webroot -w /var/www/html \
   -d $DOMAIN \
-  -m mail@$DOMAIN \
+  "${CERTBOT_EMAIL_ARGS[@]}" \
   --agree-tos --non-interactive \
   --deploy-hook "systemctl reload nginx"
 

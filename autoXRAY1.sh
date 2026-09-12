@@ -15,6 +15,14 @@ if [ -z "$DOMAIN" ]; then
     exit 1
 fi
 
+# Домен должен выглядеть как домен (ловит «bash», «--», плейсхолдеры, кириллицу)
+if [[ ! "$DOMAIN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$ ]]; then
+    echo -e "${RED}❌ Ошибка: «$DOMAIN» не похоже на домен (пример: vpn.example.com).${NC}"
+    echo -e "${YEL}Домен указывается первым аргументом: bash -c \"\$(curl -L <ссылка>)\" -- ваш.домен.com${NC}"
+    echo -e "${YEL}Кириллический домен укажите в punycode (xn--...).${NC}"
+    exit 1
+fi
+
 # === ХЕЛПЕРЫ ===
 # Percent-кодирование строки (побайтово, для фрагмента #... в ссылках)
 urlencode() {
@@ -90,6 +98,18 @@ if [[ "$choice_warp" =~ ^[Yy]$ ]]; then
 else
     TAG_WARP="direct"
     INSTALL_WARP=false
+fi
+
+# E-mail для аккаунта Let's Encrypt (на него приходят уведомления об истечении)
+read -p "$(echo -e "\n${YEL}E-mail для уведомлений Let's Encrypt (Enter — без e-mail): ${NC}")" ACME_EMAIL
+while [ -n "$ACME_EMAIL" ] && [[ ! "$ACME_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]; do
+    echo -e "${RED}❌ Некорректный e-mail.${NC}"
+    read -p "$(echo -e "${YEL}Введите e-mail или нажмите Enter (без e-mail): ${NC}")" ACME_EMAIL
+done
+if [ -n "$ACME_EMAIL" ]; then
+    CERTBOT_EMAIL_ARGS=(-m "$ACME_EMAIL" --no-eff-email)
+else
+    CERTBOT_EMAIL_ARGS=(--register-unsafely-without-email)
 fi
 
 echo -e "\n${YEL}Выберите TLS fingerprint для маскировки трафика:${NC}"
@@ -187,7 +207,7 @@ fi
 
 certbot certonly --webroot -w /var/www/html \
   -d $DOMAIN \
-  -m mail@$DOMAIN \
+  "${CERTBOT_EMAIL_ARGS[@]}" \
   --agree-tos --non-interactive \
   --deploy-hook "systemctl reload nginx; cp /etc/letsencrypt/live/$DOMAIN/fullchain.pem /var/lib/xray/cert/fullchain.pem; cp /etc/letsencrypt/live/$DOMAIN/privkey.pem /var/lib/xray/cert/privkey.pem; chmod 744 /var/lib/xray/cert/privkey.pem; chmod 744 /var/lib/xray/cert/fullchain.pem; systemctl restart xray"
 
